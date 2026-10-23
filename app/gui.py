@@ -8,11 +8,25 @@ import subprocess
 import customtkinter as ctk
 from typing import Dict, List, Optional
 from tkinter import filedialog, messagebox
+from pathlib import Path
+import sys
 
-from .config import config, APP_NAME, APP_VERSION
-from .engine import engine, format_bytes, DownloadState
-from .storage import storage
-from .progress_dialog import ProgressDialog
+try:
+    from .config import config, APP_NAME, APP_VERSION
+    from .engine import engine, format_bytes, DownloadState
+    from .storage import storage
+    from .progress_dialog import ProgressDialog
+except (ImportError, ValueError):
+    try:
+        from app.config import config, APP_NAME, APP_VERSION
+        from app.engine import engine, format_bytes, DownloadState
+        from app.storage import storage
+        from app.progress_dialog import ProgressDialog
+    except (ImportError, ValueError):
+        from config import config, APP_NAME, APP_VERSION
+        from engine import engine, format_bytes, DownloadState
+        from storage import storage
+        from progress_dialog import ProgressDialog
 
 class AddUrlDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_submit):
@@ -174,6 +188,22 @@ class MainWindow(ctk.CTk):
         self.title(f"{APP_NAME} v{APP_VERSION} - Elite High-Speed Download Manager")
         self.geometry("960x600")
         self.minsize(800, 500)
+
+        # Set application icon if available
+        try:
+            ico_paths = [
+                Path(__file__).resolve().parent / "icons" / "app.ico",
+                Path(__file__).resolve().parent.parent / "app" / "icons" / "app.ico",
+            ]
+            if getattr(sys, "frozen", False):
+                ico_paths.insert(0, Path(sys._MEIPASS) / "app" / "icons" / "app.ico")
+                ico_paths.insert(0, Path(sys._MEIPASS) / "icons" / "app.ico")
+            for p in ico_paths:
+                if p.exists():
+                    self.iconbitmap(str(p))
+                    break
+        except Exception:
+            pass
 
         self.active_category = "All"
         self.row_widgets: Dict[str, DownloadItemRow] = {}

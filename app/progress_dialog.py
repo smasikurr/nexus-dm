@@ -6,9 +6,17 @@ Features: Real-time speed, ETA, overall progress, and multi-connection segment v
 import os
 import subprocess
 import customtkinter as ctk
+from pathlib import Path
+import sys
 from typing import Optional, Dict
 
-from .engine import format_bytes, format_speed, DownloadState
+try:
+    from .engine import format_bytes, format_speed, DownloadState
+except (ImportError, ValueError):
+    try:
+        from app.engine import format_bytes, format_speed, DownloadState
+    except (ImportError, ValueError):
+        from engine import format_bytes, format_speed, DownloadState
 
 class ProgressDialog(ctk.CTkToplevel):
     def __init__(self, parent, task, on_close=None):

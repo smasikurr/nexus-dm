@@ -6,7 +6,13 @@ import sqlite3
 import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
-from .config import get_app_data_dir
+try:
+    from .config import get_app_data_dir
+except (ImportError, ValueError):
+    try:
+        from app.config import get_app_data_dir
+    except (ImportError, ValueError):
+        from config import get_app_data_dir
 
 class Storage:
     def __init__(self, db_path: Optional[str] = None):

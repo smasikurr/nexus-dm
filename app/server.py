@@ -10,9 +10,19 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from typing import Optional
 
-from .config import config, APP_NAME, APP_VERSION
-from .engine import engine
-from .storage import storage
+try:
+    from .config import config, APP_NAME, APP_VERSION
+    from .engine import engine
+    from .storage import storage
+except (ImportError, ValueError):
+    try:
+        from app.config import config, APP_NAME, APP_VERSION
+        from app.engine import engine
+        from app.storage import storage
+    except (ImportError, ValueError):
+        from config import config, APP_NAME, APP_VERSION
+        from engine import engine
+        from storage import storage
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True

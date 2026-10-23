@@ -8,13 +8,35 @@ import os
 import argparse
 from pathlib import Path
 
-# Add project root to sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import sys
+import os
+import argparse
+from pathlib import Path
 
-from app.config import APP_NAME, APP_VERSION
-from app.server import server
-from app.engine import engine
-from app.gui import MainWindow
+# Ensure paths are configured for both direct python run and PyInstaller bundle
+if getattr(sys, "frozen", False):
+    bundle_dir = getattr(sys, "_MEIPASS", str(Path(__file__).resolve().parent))
+    if bundle_dir not in sys.path:
+        sys.path.insert(0, bundle_dir)
+else:
+    root_dir = str(Path(__file__).resolve().parent.parent)
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+
+app_dir = str(Path(__file__).resolve().parent)
+if app_dir not in sys.path:
+    sys.path.insert(0, app_dir)
+
+try:
+    from app.config import APP_NAME, APP_VERSION
+    from app.server import server
+    from app.engine import engine
+    from app.gui import MainWindow
+except (ImportError, ModuleNotFoundError):
+    from config import APP_NAME, APP_VERSION
+    from server import server
+    from engine import engine
+    from gui import MainWindow
 
 def main():
     parser = argparse.ArgumentParser(description=f"{APP_NAME} v{APP_VERSION} - Elite Download Manager")

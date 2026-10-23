@@ -12,8 +12,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable
 import requests
 
-from .config import config
-from .storage import storage
+try:
+    from .config import config
+    from .storage import storage
+except (ImportError, ValueError):
+    try:
+        from app.config import config
+        from app.storage import storage
+    except (ImportError, ValueError):
+        from config import config
+        from storage import storage
 
 class DownloadState:
     QUEUED = "queued"
