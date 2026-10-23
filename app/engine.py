@@ -125,6 +125,14 @@ class DownloadTask:
         self._last_time = time.time()
         self._last_bytes = 0
 
+    @property
+    def state(self):
+        return self.status
+
+    @state.setter
+    def state(self, value):
+        self.status = value
+
     def _extract_filename(self, url: str) -> str:
         try:
             parsed = urllib.parse.urlparse(url)

@@ -29,6 +29,18 @@ class ProgressDialog(ctk.CTkToplevel):
         self.attributes("-topmost", True)
 
         self._is_active = True
+        try:
+            candidates = []
+            if getattr(sys, "frozen", False):
+                candidates.append(Path(sys._MEIPASS) / "app" / "icons" / "app.ico")
+                candidates.append(Path(sys._MEIPASS) / "icons" / "app.ico")
+            candidates.append(Path(__file__).resolve().parent / "icons" / "app.ico")
+            for c in candidates:
+                if c.exists():
+                    self.iconbitmap(str(c))
+                    break
+        except Exception:
+            pass
         self._setup_ui()
         self.task.add_listener(self._on_task_update)
         self.protocol("WM_DELETE_WINDOW", self._handle_close)
