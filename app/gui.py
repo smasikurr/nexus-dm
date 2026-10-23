@@ -687,20 +687,33 @@ class MainWindow(ctk.CTk):
                 if config.show_progress_dialog and task.id not in self.active_dialogs:
                     self._open_progress_dialog(task)
                 self._refresh_download_list()
-            elif event_type in ["completed", "failed", "paused"]:
+            elif event_type in ["completed", "failed", "paused", "downloading"]:
                 self._refresh_download_list()
         self.after(0, _handle)
 
     def _open_progress_dialog(self, task):
         if task.id in self.active_dialogs:
             try:
-                self.active_dialogs[task.id].focus()
+                dlg = self.active_dialogs[task.id]
+                dlg.deiconify()
+                dlg.lift()
+                dlg.attributes("-topmost", True)
+                dlg.focus_force()
                 return
             except Exception:
                 pass
 
-        dlg = ProgressDialog(self, task, on_close=lambda: self.active_dialogs.pop(task.id, None))
+        try:
+            self.deiconify()
+            self.lift()
+        except Exception:
+            pass
+
+        dlg = ProgressDialog(self, task, on_close=lambda *args: self.active_dialogs.pop(task.id, None))
         self.active_dialogs[task.id] = dlg
+        dlg.lift()
+        dlg.attributes("-topmost", True)
+        dlg.focus_force()
 
     def _show_add_url(self):
         AddUrlDialog(self, on_submit=self._on_add_url_submit)

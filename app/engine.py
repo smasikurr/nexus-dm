@@ -447,15 +447,30 @@ class DownloadEngine:
             if cb in self._global_listeners:
                 self._global_listeners.remove(cb)
 
-    def _on_task_update(self, info: Dict):
-        for listener in list(self._global_listeners):
+    def _emit_event(self, event_type: str, task: 'DownloadTask'):
+        with self._lock:
+            listeners = list(self._global_listeners)
+        for listener in listeners:
             try:
-                listener(info)
+                listener(event_type, task)
+            except TypeError:
+                try:
+                    listener(task.get_info())
+                except Exception:
+                    pass
             except Exception:
                 pass
 
+    def _on_task_update(self, info: Dict):
+        task_id = info.get("id")
+        task = self.tasks.get(task_id)
+        if task:
+            self._emit_event(task.status, task)
+
     def create_task(self, url: str, filename: Optional[str] = None, save_path: Optional[str] = None,
-                    headers: Optional[Dict] = None, auto_start: bool = True) -> DownloadTask:
+                    headers: Optional[Dict] = None, auto_start: bool = True, save_dir: Optional[str] = None) -> 'DownloadTask':
+        if save_dir and not save_path:
+            save_path = save_dir
         task_id = str(uuid.uuid4())
         task = DownloadTask(task_id, url, filename, save_path, headers, num_connections=config.max_connections)
         task.add_listener(self._on_task_update)
@@ -473,6 +488,9 @@ class DownloadEngine:
 
         with self._lock:
             self.tasks[task_id] = task
+
+        # Emit created event immediately so UI opens progress dialog
+        self._emit_event("created", task)
 
         if auto_start:
             task.start()

@@ -42,6 +42,19 @@ class ProgressDialog(ctk.CTkToplevel):
         except Exception:
             pass
         self._setup_ui()
+
+        # Center on screen
+        try:
+            self.update_idletasks()
+            w, h = 560, 340
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = max(0, int((sw - w) / 2))
+            y = max(0, int((sh - h) / 2))
+            self.geometry(f"{w}x{h}+{x}+{y}")
+        except Exception:
+            pass
+
         self.task.add_listener(self._on_task_update)
         self.protocol("WM_DELETE_WINDOW", self._handle_close)
 
@@ -177,7 +190,9 @@ class ProgressDialog(ctk.CTkToplevel):
         pct_clamped = min(max(pct, 0.0), 1.0)
 
         self.progress_bar.set(pct_clamped)
-        self.lbl_percent.configure(text=f"{pct_clamped * 100:.1f}%")
+        pct_display = f"{pct_clamped * 100:.1f}%"
+        self.lbl_percent.configure(text=pct_display)
+        self.title(f"{pct_display} - {self.task.filename} - Nexus DM")
         self.lbl_size.configure(text=f"Size: {format_bytes(downloaded)} / {format_bytes(total) if total > 0 else 'Unknown'}")
         self.lbl_speed.configure(text=f"Transfer rate: {info['speed_formatted']}")
         self.lbl_eta.configure(text=f"Time left: {info['eta']}")
@@ -195,6 +210,7 @@ class ProgressDialog(ctk.CTkToplevel):
                 self.chunk_widgets[i].set(cp)
 
         if info["status"] == DownloadState.COMPLETED:
+            self.title(f"Complete - {self.task.filename} - Nexus DM")
             self.btn_pause.configure(state="disabled")
             self.btn_cancel.configure(text="Close", fg_color="gray")
             self.btn_open_file.configure(state="normal")
@@ -202,6 +218,7 @@ class ProgressDialog(ctk.CTkToplevel):
                 pb.set(1.0)
 
         elif info["status"] == DownloadState.FAILED:
+            self.title(f"Failed - {self.task.filename} - Nexus DM")
             self.lbl_status.configure(text=f"Error: {info['error_message']}", text_color="#d9534f")
             self.btn_pause.configure(state="disabled")
 
@@ -209,5 +226,11 @@ class ProgressDialog(ctk.CTkToplevel):
         self._is_active = False
         self.task.remove_listener(self._on_task_update)
         if self.on_close:
-            self.on_close(self)
+            try:
+                self.on_close(self)
+            except TypeError:
+                try:
+                    self.on_close()
+                except Exception:
+                    pass
         self.destroy()
