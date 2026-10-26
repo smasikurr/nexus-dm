@@ -50,6 +50,22 @@ def format_eta(seconds: float) -> str:
         return f"{h:02d}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
 
+def get_unique_filepath(file_path: str) -> str:
+    """
+    Ensure file_path does not overwrite an existing file on disk.
+    If 'video.mp4' exists, returns 'video (1).mp4', 'video (2).mp4', etc.
+    """
+    if not os.path.exists(file_path):
+        return file_path
+    base_dir, filename = os.path.split(file_path)
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    new_path = os.path.join(base_dir, f"{name} ({counter}){ext}")
+    while os.path.exists(new_path):
+        counter += 1
+        new_path = os.path.join(base_dir, f"{name} ({counter}){ext}")
+    return new_path
+
 class ChunkWorker(threading.Thread):
     def __init__(self, chunk_id: int, url: str, file_path: str, start_byte: int, end_byte: int,
                  headers: Dict, on_bytes: Callable[[int, int], None], is_running_check: Callable[[], bool]):
@@ -99,9 +115,15 @@ class DownloadTask:
                  headers: Optional[Dict] = None, num_connections: int = 16):
         self.id = task_id
         self.url = url
-        self.headers = headers or {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        default_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        self.headers = {
+            "User-Agent": default_ua,
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "keep-alive"
         }
+        if headers:
+            self.headers.update({k: v for k, v in headers.items() if v})
         self.num_connections = min(max(num_connections, 1), 32)
         self.status = DownloadState.QUEUED
         self.total_bytes = 0
@@ -224,8 +246,10 @@ class DownloadTask:
                 fname = cd.split("filename=")[1].strip('"\' ;')
                 if fname:
                     self.filename = urllib.parse.unquote(fname)
-                    self.file_path = os.path.join(os.path.dirname(self.file_path), self.filename)
+                    self.file_path = get_unique_filepath(os.path.join(os.path.dirname(self.file_path), self.filename))
+                    self.filename = os.path.basename(self.file_path)
                     self.category = config.detect_category(self.filename)
+                    storage.update_progress(self.id, self.downloaded_bytes, self.total_bytes, self.speed, self.eta)
 
             # Check length & range support
             length = resp.headers.get("content-length")
@@ -253,12 +277,19 @@ class DownloadTask:
 
     def _run_download(self):
         try:
-            # Ensure unique filename if already exists and not resuming
-            if not os.path.exists(self.file_path) or self.downloaded_bytes == 0:
-                base_dir = os.path.dirname(self.file_path)
-                os.makedirs(base_dir, exist_ok=True)
+            base_dir = os.path.dirname(self.file_path)
+            os.makedirs(base_dir, exist_ok=True)
+
+            # Ensure unique filename if starting fresh so downloads never overwrite each other
+            if self.downloaded_bytes == 0:
+                self.file_path = get_unique_filepath(self.file_path)
+                self.filename = os.path.basename(self.file_path)
 
             self._probe_server()
+
+            if self.downloaded_bytes == 0:
+                self.file_path = get_unique_filepath(self.file_path)
+                self.filename = os.path.basename(self.file_path)
 
             # Check if YouTube or media stream that should be handled with yt-dlp
             is_streaming_site = any(domain in self.url.lower() for domain in [
@@ -423,6 +454,14 @@ class DownloadTask:
             self._finish_download()
 
     def _finish_download(self):
+        if self.downloaded_bytes == 0 and self.total_bytes != 0:
+            self.status = DownloadState.FAILED
+            self.error_message = "Download failed: 0 bytes received from server."
+            self._running = False
+            storage.update_status(self.id, self.status, self.error_message)
+            self._notify()
+            return
+
         self.status = DownloadState.COMPLETED
         self.downloaded_bytes = self.total_bytes if self.total_bytes > 0 else self.downloaded_bytes
         self.speed = 0.0
@@ -473,6 +512,8 @@ class DownloadEngine:
             save_path = save_dir
         task_id = str(uuid.uuid4())
         task = DownloadTask(task_id, url, filename, save_path, headers, num_connections=config.max_connections)
+        task.file_path = get_unique_filepath(task.file_path)
+        task.filename = os.path.basename(task.file_path)
         task.add_listener(self._on_task_update)
 
         storage.add_download({

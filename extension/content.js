@@ -38,7 +38,7 @@
     const src = el.currentSrc || el.src || (el.querySelector("source") ? el.querySelector("source").src : null);
     if (!src || src.startsWith("data:")) return;
 
-    const title = getMediaTitle();
+    const title = getMediaTitle(el, src);
     const existing = detectedMedia.find(m => m.url === src);
     if (!existing) {
       detectedMedia.push({
@@ -50,19 +50,44 @@
     }
   }
 
-  function getMediaTitle() {
-    // Attempt to extract title from page or document
+  function getMediaTitle(video, srcUrl) {
+    // 1. Try URL filename first for exact unique file naming
+    if (srcUrl) {
+      try {
+        const urlObj = new URL(srcUrl, window.location.href);
+        const pathname = urlObj.pathname;
+        const lastSeg = pathname.split("/").pop();
+        if (lastSeg && lastSeg.includes(".") && !lastSeg.endsWith(".html") && !lastSeg.endsWith(".php")) {
+          return sanitizeFilename(decodeURIComponent(lastSeg));
+        }
+      } catch (e) {}
+    }
+
+    // 2. Try video element accessibility labels or container titles
+    if (video) {
+      const directLabel = video.getAttribute("aria-label") || video.getAttribute("title") || video.getAttribute("alt");
+      if (directLabel) {
+        return sanitizeFilename(directLabel) + ".mp4";
+      }
+
+      const container = video.closest("article, figure, [data-title], [aria-label], .video-container");
+      if (container) {
+        const cLabel = container.getAttribute("data-title") || container.getAttribute("aria-label");
+        if (cLabel) {
+          return sanitizeFilename(cLabel) + ".mp4";
+        }
+      }
+    }
+
+    // 3. Fallback: Page title with unique random suffix
     const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle && ogTitle.content) return sanitizeFilename(ogTitle.content);
-
-    const docTitle = document.title;
-    if (docTitle) return sanitizeFilename(docTitle);
-
-    return `video_${Date.now()}`;
+    const baseTitle = (ogTitle && ogTitle.content) || document.title || "video";
+    const shortId = Math.random().toString(36).substring(2, 7);
+    return `${sanitizeFilename(baseTitle)}_${shortId}.mp4`;
   }
 
   function sanitizeFilename(name) {
-    return name.replace(/[\\/:*?"<>|]/g, "_").trim().slice(0, 100);
+    return name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 80);
   }
 
   function attachDownloadButton(video) {
@@ -89,10 +114,13 @@
         targetUrl = window.location.href;
       }
 
+      const cleanFilename = getMediaTitle(video, targetUrl);
+
       chrome.runtime.sendMessage({
         action: "download_stream",
         url: targetUrl,
-        title: getMediaTitle() + ".mp4"
+        title: cleanFilename,
+        referer: window.location.href
       });
 
       // Visual feedback

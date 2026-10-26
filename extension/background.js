@@ -145,7 +145,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendToNexusDM({
       url: request.url,
       filename: request.title || "",
-      referer: sender.tab ? sender.tab.url : "",
+      referer: request.referer || (sender.tab ? sender.tab.url : ""),
       user_agent: navigator.userAgent
     });
     sendResponse({ status: "sent" });

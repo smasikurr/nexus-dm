@@ -69,7 +69,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         chrome.runtime.sendMessage({
           action: "download_stream",
           url: stream.url,
-          title: stream.title
+          title: stream.title,
+          referer: (activeTab && activeTab.url) ? activeTab.url : ""
         });
         row.querySelector("button").textContent = "✓ Sent";
         setTimeout(() => { row.querySelector("button").textContent = "⚡ Download"; }, 2000);
@@ -85,7 +86,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (url) {
       chrome.runtime.sendMessage({
         action: "download_stream",
-        url: url
+        url: url,
+        referer: (activeTab && activeTab.url) ? activeTab.url : ""
       });
       manualUrlInput.value = "";
       btnQuickDownload.textContent = "✓ Sent";

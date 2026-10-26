@@ -798,7 +798,8 @@ class MainWindow(ctk.CTk):
             if item:
                 engine.cancel_task(task_id)
                 storage.delete_download(task_id)
-                engine.create_task(item["url"], filename=item["filename"], save_dir=item.get("save_path", config.download_dir), auto_start=True)
+                folder = os.path.dirname(item.get("file_path", config.download_dir))
+                engine.create_task(item["url"], filename=item["filename"], save_dir=folder, auto_start=True)
         self._refresh_download_list()
 
     def _action_open_selected(self):
@@ -808,14 +809,22 @@ class MainWindow(ctk.CTk):
         item = storage.get_download(ids[0])
         if not item:
             return
-        fpath = Path(item.get("save_path", config.download_dir)) / item["filename"]
-        if fpath.exists():
+
+        fpath_str = item.get("file_path", "")
+        fpath = Path(fpath_str) if fpath_str else (Path(config.download_dir) / item.get("filename", ""))
+
+        if fpath.exists() and fpath.is_file() and os.path.getsize(str(fpath)) > 0:
             try:
                 os.startfile(str(fpath))
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to open file: {e}")
         else:
-            messagebox.showwarning("File Missing", f"File does not exist:\n{fpath}")
+            ans = messagebox.askyesno(
+                "File Not Found",
+                f"The downloaded file was not found at:\n{fpath}\n\nWould you like to re-download it now?"
+            )
+            if ans:
+                self._action_redownload_selected()
 
     def _action_open_folder_selected(self):
         ids = self._get_selected_ids()
@@ -823,7 +832,10 @@ class MainWindow(ctk.CTk):
             self._open_downloads_dir()
             return
         item = storage.get_download(ids[0])
-        folder = item.get("save_path", config.download_dir) if item else config.download_dir
+        fpath_str = item.get("file_path", "") if item else ""
+        folder = os.path.dirname(fpath_str) if fpath_str else config.download_dir
+        if not os.path.exists(folder):
+            folder = config.download_dir
         if Path(folder).exists():
             subprocess.Popen(f'explorer "{folder}"')
 
