@@ -4,6 +4,7 @@ Nexus DM (NDM) - SQLite Storage Manager
 
 import sqlite3
 import datetime
+import os
 from pathlib import Path
 from typing import List, Dict, Optional
 try:
@@ -102,6 +103,21 @@ class Storage:
         with self._get_connection() as conn:
             row = conn.execute("SELECT * FROM downloads WHERE id = ?", (download_id,)).fetchone()
             return dict(row) if row else None
+
+    def get_by_url(self, url: str) -> Optional[Dict]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM downloads WHERE url = ? ORDER BY created_at DESC LIMIT 1", (url,)).fetchone()
+            return dict(row) if row else None
+
+    def find_completed_by_url(self, url: str) -> Optional[Dict]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM downloads WHERE url = ? AND status = 'completed' ORDER BY created_at DESC", (url,)).fetchall()
+            for r in rows:
+                item = dict(r)
+                fp = item.get("file_path")
+                if fp and os.path.exists(fp) and os.path.getsize(fp) > 0:
+                    return item
+            return None
 
     def get_all_downloads(self) -> List[Dict]:
         with self._get_connection() as conn:

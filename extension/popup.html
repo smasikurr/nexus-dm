@@ -66,7 +66,10 @@
     <div id="status-chip" class="status-badge status-offline">● Offline</div>
   </div>
 
-  <div class="section-title">Detected Media on Page</div>
+  <div style="display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px;">
+    <div class="section-title" style="margin: 0;">Detected Media on Page</div>
+    <button type="button" id="btn-download-all" class="btn-download-sm" style="display: none; padding: 3px 8px; font-size: 10px; background: #1f538d;">⚡ Download All (<span id="media-count">0</span>)</button>
+  </div>
   <div class="media-card" id="media-list">
     <div class="media-empty">No video streams detected yet</div>
   </div>

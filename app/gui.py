@@ -17,6 +17,30 @@ from typing import Dict, List, Optional
 from PIL import Image
 
 try:
+    import pystray
+except ImportError:
+    pystray = None
+
+def set_windows_autostart(enable: bool):
+    try:
+        import winreg
+        key = winreg.HKEY_CURRENT_USER
+        sub_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "NexusDM"
+        with winreg.OpenKey(key, sub_key, 0, winreg.KEY_ALL_ACCESS) as reg_key:
+            if enable:
+                exe = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(sys.argv[0])
+                cmd = f'"{exe}" --minimized'
+                winreg.SetValueEx(reg_key, app_name, 0, winreg.REG_SZ, cmd)
+            else:
+                try:
+                    winreg.DeleteValue(reg_key, app_name)
+                except FileNotFoundError:
+                    pass
+    except Exception as e:
+        print(f"[Autostart] Registry update error: {e}")
+
+try:
     from .config import config, APP_NAME, APP_VERSION, CATEGORY_EXTENSIONS
     from .engine import engine, format_bytes, format_speed, DownloadState
     from .storage import storage
@@ -68,7 +92,7 @@ class AddUrlDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_submit, default_url=""):
         super().__init__(parent)
         self.title("Download File Info - Nexus DM")
-        self.geometry("540x310")
+        self.geometry("560x360")
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.on_submit = on_submit
@@ -105,7 +129,7 @@ class AddUrlDialog(ctk.CTkToplevel):
 
         # 1. URL Row
         ctk.CTkLabel(self, text="Address (URL):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=pad, pady=(6, 2))
-        self.entry_url = ctk.CTkEntry(self, placeholder_text="https://...", width=500)
+        self.entry_url = ctk.CTkEntry(self, placeholder_text="https://...", width=520)
         self.entry_url.pack(padx=pad, pady=2)
 
         # Pre-fill URL if passed or from clipboard
@@ -126,28 +150,33 @@ class AddUrlDialog(ctk.CTkToplevel):
         ctk.CTkLabel(cat_frame, text="Category:", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=(0, 6))
         self.cat_var = ctk.StringVar(value="General")
         categories = ["General", "Video", "Audio", "Compressed", "Document", "Program", "Other"]
-        self.cat_menu = ctk.CTkOptionMenu(cat_frame, values=categories, variable=self.cat_var, width=130)
+        self.cat_menu = ctk.CTkOptionMenu(cat_frame, values=categories, variable=self.cat_var, width=140, command=self._on_cat_selected)
         self.cat_menu.pack(side="left")
-
-        # Auto-detect category from URL
-        self.entry_url.bind("<KeyRelease>", self._on_url_change)
-        self._on_url_change()
 
         # 3. Save To Location
         ctk.CTkLabel(self, text="Save To (Destination Folder):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=pad, pady=(6, 2))
         f_row = ctk.CTkFrame(self, fg_color="transparent")
         f_row.pack(fill="x", padx=pad, pady=2)
 
-        self.entry_path = ctk.CTkEntry(f_row, width=410)
-        self.entry_path.insert(0, config.download_dir)
+        self.entry_path = ctk.CTkEntry(f_row, width=420)
+        self.entry_path.insert(0, config.get_category_dir("Other"))
         self.entry_path.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         btn_browse = ctk.CTkButton(f_row, text="Browse...", width=80, command=self._browse_dir)
         btn_browse.pack(side="right")
 
+        # Checkbox: Remember category folder
+        self.chk_remember = ctk.CTkCheckBox(self, text="Remember this folder for the selected category")
+        self.chk_remember.select()
+        self.chk_remember.pack(anchor="w", padx=pad, pady=(6, 4))
+
+        # Auto-detect category from URL
+        self.entry_url.bind("<KeyRelease>", self._on_url_change)
+        self._on_url_change()
+
         # 4. Buttons: Start Download, Download Later, Cancel
         btn_box = ctk.CTkFrame(self, fg_color="transparent")
-        btn_box.pack(fill="x", padx=pad, pady=(16, 12))
+        btn_box.pack(fill="x", padx=pad, pady=(12, 12))
 
         btn_start = ctk.CTkButton(
             btn_box,
@@ -180,6 +209,11 @@ class AddUrlDialog(ctk.CTkToplevel):
         )
         btn_cancel.pack(side="right")
 
+    def _on_cat_selected(self, cat):
+        dir_path = config.get_category_dir(cat if cat != "General" else "Other")
+        self.entry_path.delete(0, "end")
+        self.entry_path.insert(0, dir_path)
+
     def _on_url_change(self, event=None):
         url = self.entry_url.get().strip()
         if url:
@@ -187,6 +221,7 @@ class AddUrlDialog(ctk.CTkToplevel):
             cat = config.detect_category(name)
             if cat in ["Video", "Audio", "Compressed", "Document", "Program"]:
                 self.cat_var.set(cat)
+                self._on_cat_selected(cat)
 
     def _browse_dir(self):
         d = filedialog.askdirectory(initialdir=self.entry_path.get())
@@ -197,9 +232,12 @@ class AddUrlDialog(ctk.CTkToplevel):
     def _submit(self, auto_start=True):
         url = self.entry_url.get().strip()
         path = self.entry_path.get().strip()
+        cat = self.cat_var.get()
         if not url:
             messagebox.showwarning("Nexus DM", "Please enter a valid URL.")
             return
+        if self.chk_remember.get() and path:
+            config.set_category_dir(cat if cat != "General" else "Other", path)
         self.on_submit(url, path, auto_start=auto_start)
         self.destroy()
 
@@ -211,7 +249,7 @@ class OptionsDialog(ctk.CTkToplevel):
     def __init__(self, parent, on_save):
         super().__init__(parent)
         self.title("Configuration & Options - Nexus DM")
-        self.geometry("520x400")
+        self.geometry("560x520")
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.on_save = on_save
@@ -221,42 +259,64 @@ class OptionsDialog(ctk.CTkToplevel):
     def _setup_ui(self):
         pad = 18
 
-        ctk.CTkLabel(self, text="Nexus DM Configuration", font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=pad, pady=(16, 10))
+        ctk.CTkLabel(self, text="Nexus DM Configuration & Options", font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=pad, pady=(14, 8))
 
-        # Default Download Directory
-        ctk.CTkLabel(self, text="Default Download Directory:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=pad, pady=(6, 2))
-        f_dir = ctk.CTkFrame(self, fg_color="transparent")
-        f_dir.pack(fill="x", padx=pad, pady=2)
+        scroll = ctk.CTkScrollableFrame(self, width=520, height=390)
+        scroll.pack(fill="both", expand=True, padx=pad, pady=4)
 
-        self.entry_dir = ctk.CTkEntry(f_dir, width=380)
-        self.entry_dir.insert(0, config.download_dir)
-        self.entry_dir.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        # 1. Category Default Folders (Save To)
+        ctk.CTkLabel(scroll, text="Category Default Save Folders:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", pady=(4, 6))
 
-        btn_browse = ctk.CTkButton(f_dir, text="Browse...", width=80, command=self._browse)
-        btn_browse.pack(side="right")
+        self.cat_entries = {}
+        cats = [
+            ("General / Other", "Other"),
+            ("Video", "Video"),
+            ("Music / Audio", "Audio"),
+            ("Compressed", "Compressed"),
+            ("Documents", "Document"),
+            ("Programs", "Program")
+        ]
 
-        # Maximum Connections per Download
-        ctk.CTkLabel(self, text="Max Connections per Download (Segmented Speed):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=pad, pady=(12, 2))
+        for label, cat_key in cats:
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=f"{label}:", width=120, anchor="w", font=ctk.CTkFont(size=11)).pack(side="left")
+            entry = ctk.CTkEntry(row, width=270)
+            entry.insert(0, config.get_category_dir(cat_key))
+            entry.pack(side="left", fill="x", expand=True, padx=4)
+            btn = ctk.CTkButton(row, text="Browse", width=60, command=lambda e=entry: self._browse_entry(e))
+            btn.pack(side="right")
+            self.cat_entries[cat_key] = entry
+
+        # 2. Maximum Connections
+        ctk.CTkLabel(scroll, text="Max Connections per Download:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", pady=(12, 2))
         self.conn_var = ctk.StringVar(value=str(config.max_connections))
         conn_opts = ["4", "8", "16", "24", "32"]
-        self.conn_menu = ctk.CTkOptionMenu(self, values=conn_opts, variable=self.conn_var, width=120)
-        self.conn_menu.pack(anchor="w", padx=pad, pady=2)
+        self.conn_menu = ctk.CTkOptionMenu(scroll, values=conn_opts, variable=self.conn_var, width=120)
+        self.conn_menu.pack(anchor="w", pady=2)
 
-        # UI Theme
-        ctk.CTkLabel(self, text="Application Theme:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=pad, pady=(12, 2))
+        # 3. UI Theme
+        ctk.CTkLabel(scroll, text="Application Theme:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", pady=(10, 2))
         self.theme_var = ctk.StringVar(value=config.theme.capitalize())
-        self.theme_menu = ctk.CTkOptionMenu(self, values=["Dark", "Light"], variable=self.theme_var, width=120)
-        self.theme_menu.pack(anchor="w", padx=pad, pady=2)
+        self.theme_menu = ctk.CTkOptionMenu(scroll, values=["Dark", "Light"], variable=self.theme_var, width=120)
+        self.theme_menu.pack(anchor="w", pady=2)
 
-        # Toggles
-        self.chk_dialog = ctk.CTkCheckBox(self, text="Show IDM-style progress popup on download start")
+        # 4. Integration & System Toggles
+        ctk.CTkLabel(scroll, text="Integration & System:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", pady=(12, 4))
+
+        self.chk_dialog = ctk.CTkCheckBox(scroll, text="Show IDM-style progress popup on download start")
         if config.show_progress_dialog:
             self.chk_dialog.select()
-        self.chk_dialog.pack(anchor="w", padx=pad, pady=(14, 6))
+        self.chk_dialog.pack(anchor="w", pady=3)
+
+        self.chk_autostart = ctk.CTkCheckBox(scroll, text="Launch Nexus DM automatically on Windows startup (Background tray)")
+        if config.autostart:
+            self.chk_autostart.select()
+        self.chk_autostart.pack(anchor="w", pady=3)
 
         # Buttons
         btn_box = ctk.CTkFrame(self, fg_color="transparent")
-        btn_box.pack(fill="x", side="bottom", padx=pad, pady=16)
+        btn_box.pack(fill="x", side="bottom", padx=pad, pady=12)
 
         btn_ok = ctk.CTkButton(btn_box, text="OK / Apply", width=100, command=self._apply)
         btn_ok.pack(side="right", padx=(8, 0))
@@ -264,18 +324,26 @@ class OptionsDialog(ctk.CTkToplevel):
         btn_cancel = ctk.CTkButton(btn_box, text="Cancel", width=80, fg_color="gray", command=self.destroy)
         btn_cancel.pack(side="right")
 
-    def _browse(self):
-        d = filedialog.askdirectory(initialdir=self.entry_dir.get())
+    def _browse_entry(self, entry_widget):
+        d = filedialog.askdirectory(initialdir=entry_widget.get())
         if d:
-            self.entry_dir.delete(0, "end")
-            self.entry_dir.insert(0, d)
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, d)
 
     def _apply(self):
-        config.download_dir = self.entry_dir.get().strip()
+        for cat_key, entry in self.cat_entries.items():
+            path_val = entry.get().strip()
+            if path_val:
+                config.set_category_dir(cat_key, path_val)
+                if cat_key == "Other":
+                    config.download_dir = path_val
+
         config.max_connections = int(self.conn_var.get())
         config.theme = self.theme_var.get().lower()
         config.show_progress_dialog = bool(self.chk_dialog.get())
+        config.autostart = bool(self.chk_autostart.get())
         config.save()
+        set_windows_autostart(config.autostart)
         ctk.set_appearance_mode(config.theme)
         self.on_save()
         self.destroy()
@@ -300,14 +368,68 @@ class MainWindow(ctk.CTk):
 
         self._setup_window_icon()
         self._setup_menu_bar()
+        self._setup_tray()
         self._setup_ui()
         self._setup_context_menu()
         self._setup_keybindings()
+
+        self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
 
         # Engine listeners and timer refresh
         engine.add_global_listener(self._on_engine_event)
         self._refresh_download_list()
         self.after(1000, self._periodic_ui_update)
+
+    def _setup_tray(self):
+        try:
+            if not pystray:
+                self.tray_icon = None
+                return
+            ico_path = get_icon_path("app.ico")
+            if ico_path and ico_path.exists():
+                im = Image.open(ico_path)
+            else:
+                im = Image.new("RGBA", (32, 32), color="#1f538d")
+
+            menu = pystray.Menu(
+                pystray.MenuItem("Open Nexus DM", lambda: self.after(0, self.show_from_tray), default=True),
+                pystray.MenuItem("Open Downloads Folder", lambda: self.after(0, self._open_downloads_dir)),
+                pystray.MenuItem("Options...", lambda: self.after(0, self._show_options)),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Exit", lambda: self.after(0, self.quit_app))
+            )
+            self.tray_icon = pystray.Icon("NexusDM", im, f"{APP_NAME} v{APP_VERSION}", menu)
+            self.tray_icon.run_detached()
+        except Exception as e:
+            print(f"[Tray] Could not start system tray icon: {e}")
+            self.tray_icon = None
+
+    def hide_to_tray(self):
+        self.withdraw()
+
+    def show_from_tray(self):
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def quit_app(self):
+        if hasattr(self, "tray_icon") and self.tray_icon:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+        for dlg in list(self.active_dialogs.values()):
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+        self.destroy()
+        try:
+            from .server import server
+            server.stop()
+        except Exception:
+            pass
+        os._exit(0)
 
     def _setup_window_icon(self):
         ico = get_icon_path("app.ico")
@@ -327,7 +449,7 @@ class MainWindow(ctk.CTk):
         menu_tasks.add_separator()
         menu_tasks.add_command(label="Open Downloads folder", command=self._open_downloads_dir)
         menu_tasks.add_separator()
-        menu_tasks.add_command(label="Exit", command=self.destroy)
+        menu_tasks.add_command(label="Exit", command=self.quit_app)
         menubar.add_cascade(label="Tasks", menu=menu_tasks)
 
         # File Menu
@@ -681,17 +803,83 @@ class MainWindow(ctk.CTk):
         self.lbl_speed_total.configure(text=f"Total Speed: {format_speed(total_speed)}")
         self.after(800, self._periodic_ui_update)
 
-    def _on_engine_event(self, event_type: str, task):
+    def _on_engine_event(self, event_type: str, data):
         def _handle():
             if event_type == "created":
-                if config.show_progress_dialog and task.id not in self.active_dialogs:
+                task = data
+                if config.show_progress_dialog and task and task.id not in self.active_dialogs:
                     self._open_progress_dialog(task)
                 self._refresh_download_list()
+            elif event_type == "focus_dialog":
+                task = data
+                if task:
+                    self._open_progress_dialog(task)
+            elif event_type == "already_downloaded":
+                item = data
+                if item:
+                    self._show_already_downloaded_dialog(item)
             elif event_type in ["completed", "failed", "paused", "downloading"]:
                 self._refresh_download_list()
         self.after(0, _handle)
 
+    def _show_already_downloaded_dialog(self, item: Dict):
+        fn = item.get("filename", "File")
+        fp = item.get("file_path", "")
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("File Already Downloaded - Nexus DM")
+        dlg.geometry("490x210")
+        dlg.resizable(False, False)
+        dlg.attributes("-topmost", True)
+
+        ctk.CTkLabel(dlg, text="⚡ File Already Downloaded", font=ctk.CTkFont(size=14, weight="bold")).pack(padx=16, pady=(16, 6), anchor="w")
+        ctk.CTkLabel(dlg, text=f"This file has already been downloaded and is available on disk:\n\n{fn}\n\nFolder: {fp}",
+                     font=ctk.CTkFont(size=11), text_color="gray", wraplength=450, justify="left").pack(padx=16, pady=4, anchor="w")
+
+        b_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        b_frame.pack(fill="x", padx=16, pady=(16, 12), side="bottom")
+
+        def _open():
+            if fp and os.path.exists(fp):
+                try:
+                    os.startfile(fp)
+                except Exception:
+                    pass
+            dlg.destroy()
+
+        def _folder():
+            folder = os.path.dirname(fp)
+            if folder and os.path.exists(folder):
+                try:
+                    subprocess.Popen(f'explorer "{folder}"')
+                except Exception:
+                    pass
+            dlg.destroy()
+
+        def _redownload():
+            dlg.destroy()
+            engine.create_task(item["url"], filename=item["filename"], save_dir=os.path.dirname(fp), auto_start=True, force=True)
+
+        ctk.CTkButton(b_frame, text="Open File", width=90, command=_open).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(b_frame, text="Open Folder", width=95, command=_folder).pack(side="left", padx=6)
+        ctk.CTkButton(b_frame, text="Redownload", width=95, fg_color="#333333", hover_color="#444444", command=_redownload).pack(side="left", padx=6)
+        ctk.CTkButton(b_frame, text="Cancel", width=70, fg_color="gray", command=dlg.destroy).pack(side="right")
+
+        try:
+            dlg.update_idletasks()
+            sw = dlg.winfo_screenwidth()
+            sh = dlg.winfo_screenheight()
+            x = max(0, int((sw - 490) / 2))
+            y = max(0, int((sh - 210) / 2))
+            dlg.geometry(f"490x210+{x}+{y}")
+        except Exception:
+            pass
+        dlg.lift()
+        dlg.focus_force()
+
     def _open_progress_dialog(self, task):
+        if not task:
+            return
         if task.id in self.active_dialogs:
             try:
                 dlg = self.active_dialogs[task.id]
@@ -702,12 +890,6 @@ class MainWindow(ctk.CTk):
                 return
             except Exception:
                 pass
-
-        try:
-            self.deiconify()
-            self.lift()
-        except Exception:
-            pass
 
         dlg = ProgressDialog(self, task, on_close=lambda *args: self.active_dialogs.pop(task.id, None))
         self.active_dialogs[task.id] = dlg
@@ -799,7 +981,7 @@ class MainWindow(ctk.CTk):
                 engine.cancel_task(task_id)
                 storage.delete_download(task_id)
                 folder = os.path.dirname(item.get("file_path", config.download_dir))
-                engine.create_task(item["url"], filename=item["filename"], save_dir=folder, auto_start=True)
+                engine.create_task(item["url"], filename=item["filename"], save_dir=folder, auto_start=True, force=True)
         self._refresh_download_list()
 
     def _action_open_selected(self):

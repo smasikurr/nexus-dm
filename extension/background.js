@@ -125,7 +125,13 @@ async function sendToNexusDM(payload) {
 
     const data = await res.json();
     if (data.success) {
-      notify("Nexus DM", `Download started: ${data.filename || 'File'}`);
+      if (data.already_active) {
+        notify("Nexus DM", `Already downloading: ${data.filename || 'File'}`);
+      } else if (data.already_downloaded) {
+        notify("Nexus DM", `Already downloaded: ${data.filename || 'File'}`);
+      } else {
+        notify("Nexus DM", `Download started: ${data.filename || 'File'}`);
+      }
     } else {
       notify("Nexus DM Error", data.error || "Failed to start download");
     }
@@ -137,6 +143,15 @@ async function sendToNexusDM(payload) {
 // Notification Helper
 function notify(title, message) {
   console.log(`[Nexus DM] ${title}: ${message}`);
+  try {
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: title,
+      message: message,
+      priority: 1
+    });
+  } catch (e) {}
 }
 
 // Message Dispatcher from Content Script & Popup

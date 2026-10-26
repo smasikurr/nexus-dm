@@ -19,6 +19,15 @@ CATEGORY_EXTENSIONS = {
     "Program": [".exe", ".msi", ".apk", ".bat", ".cmd", ".ps1", ".dmg", ".bin"]
 }
 
+DEFAULT_CATEGORY_SUBDIRS = {
+    "Video": "Video",
+    "Audio": "Music",
+    "Compressed": "Compressed",
+    "Document": "Documents",
+    "Program": "Programs",
+    "Other": ""
+}
+
 def get_default_download_dir():
     # Prefer D:\Downloads if D drive exists, otherwise standard user Downloads
     d_downloads = Path("D:/Downloads")
@@ -48,7 +57,38 @@ class Config:
         self.show_progress_dialog = True
         self.theme = "dark" # dark or light
         self.speed_limit_kb = 0 # 0 = unlimited
+        self.category_dirs = {}
+        self.remember_category_path = True
+        self.autostart = True
+        self._init_category_dirs()
         self.load()
+
+    def _init_category_dirs(self):
+        base = Path(self.download_dir)
+        for cat, sub in DEFAULT_CATEGORY_SUBDIRS.items():
+            if cat not in self.category_dirs:
+                self.category_dirs[cat] = str(base / sub) if sub else str(base)
+
+    def get_category_dir(self, category: str) -> str:
+        d = self.category_dirs.get(category)
+        if not d:
+            sub = DEFAULT_CATEGORY_SUBDIRS.get(category, "")
+            d = str(Path(self.download_dir) / sub) if sub else str(self.download_dir)
+            self.category_dirs[category] = d
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        return d
+
+    def set_category_dir(self, category: str, new_path: str):
+        if new_path:
+            self.category_dirs[category] = str(Path(new_path).resolve())
+            try:
+                os.makedirs(self.category_dirs[category], exist_ok=True)
+            except Exception:
+                pass
+            self.save()
 
     def load(self):
         if self.config_file.exists():
@@ -62,8 +102,16 @@ class Config:
                     self.show_progress_dialog = data.get("show_progress_dialog", self.show_progress_dialog)
                     self.theme = data.get("theme", self.theme)
                     self.speed_limit_kb = data.get("speed_limit_kb", self.speed_limit_kb)
+                    self.remember_category_path = data.get("remember_category_path", self.remember_category_path)
+                    self.autostart = data.get("autostart", self.autostart)
+                    saved_cat_dirs = data.get("category_dirs", {})
+                    if isinstance(saved_cat_dirs, dict):
+                        for k, v in saved_cat_dirs.items():
+                            if v:
+                                self.category_dirs[k] = v
             except Exception as e:
                 print(f"[Config] Error loading config: {e}")
+        self._init_category_dirs()
 
     def save(self):
         try:
@@ -74,7 +122,10 @@ class Config:
                 "auto_start_downloads": self.auto_start_downloads,
                 "show_progress_dialog": self.show_progress_dialog,
                 "theme": self.theme,
-                "speed_limit_kb": self.speed_limit_kb
+                "speed_limit_kb": self.speed_limit_kb,
+                "category_dirs": self.category_dirs,
+                "remember_category_path": self.remember_category_path,
+                "autostart": self.autostart
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)

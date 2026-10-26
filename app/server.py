@@ -100,18 +100,33 @@ class NexusApiHandler(BaseHTTPRequestHandler):
             if user_agent:
                 headers["User-Agent"] = user_agent
 
+            force = body.get("force", False)
             task = engine.create_task(
                 url=url,
                 filename=filename,
                 headers=headers if headers else None,
-                auto_start=config.auto_start_downloads
+                auto_start=config.auto_start_downloads,
+                force=force
             )
+
+            if task is None:
+                completed = storage.find_completed_by_url(url)
+                self._send_json(200, {
+                    "success": True,
+                    "already_downloaded": True,
+                    "task_id": completed["id"] if completed else "",
+                    "filename": completed["filename"] if completed else "",
+                    "file_path": completed["file_path"] if completed else "",
+                    "message": "File has already been downloaded."
+                })
+                return
 
             self._send_json(200, {
                 "success": True,
                 "task_id": task.id,
                 "filename": task.filename,
-                "status": task.status
+                "status": task.status,
+                "file_path": task.file_path
             })
 
         elif path == "/api/pause":

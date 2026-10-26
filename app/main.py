@@ -42,6 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description=f"{APP_NAME} v{APP_VERSION} - Elite Download Manager")
     parser.add_argument("--url", help="Download a URL directly on startup")
     parser.add_argument("--headless", action="store_true", help="Run only background REST API server")
+    parser.add_argument("--minimized", action="store_true", help="Start minimized to system tray")
     args = parser.parse_args()
 
     # 1. Start Local API Server
@@ -63,6 +64,8 @@ def main():
 
     # 3. Launch Modern Desktop GUI
     app = MainWindow()
+    if args.minimized:
+        app.withdraw()
     try:
         app.mainloop()
     finally:

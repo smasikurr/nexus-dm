@@ -135,8 +135,15 @@ class DownloadTask:
         self.supports_ranges = False
 
         self.filename = filename or self._extract_filename(url)
-        self.file_path = save_path or os.path.join(config.download_dir, self.filename)
         self.category = config.detect_category(self.filename)
+        if save_path:
+            if os.path.isdir(save_path):
+                self.file_path = os.path.join(save_path, self.filename)
+            else:
+                self.file_path = save_path
+        else:
+            cat_dir = config.get_category_dir(self.category)
+            self.file_path = os.path.join(cat_dir, self.filename)
 
         self._workers: List[ChunkWorker] = []
         self._chunks_progress: List[Dict] = []
@@ -246,9 +253,10 @@ class DownloadTask:
                 fname = cd.split("filename=")[1].strip('"\' ;')
                 if fname:
                     self.filename = urllib.parse.unquote(fname)
-                    self.file_path = get_unique_filepath(os.path.join(os.path.dirname(self.file_path), self.filename))
-                    self.filename = os.path.basename(self.file_path)
                     self.category = config.detect_category(self.filename)
+                    cat_dir = config.get_category_dir(self.category)
+                    self.file_path = get_unique_filepath(os.path.join(cat_dir, self.filename))
+                    self.filename = os.path.basename(self.file_path)
                     storage.update_progress(self.id, self.downloaded_bytes, self.total_bytes, self.speed, self.eta)
 
             # Check length & range support
@@ -506,8 +514,29 @@ class DownloadEngine:
         if task:
             self._emit_event(task.status, task)
 
+    def get_active_task_by_url(self, url: str) -> Optional['DownloadTask']:
+        with self._lock:
+            for task in self.tasks.values():
+                if task.url == url and task.status in [DownloadState.DOWNLOADING, DownloadState.QUEUED]:
+                    return task
+        return None
+
     def create_task(self, url: str, filename: Optional[str] = None, save_path: Optional[str] = None,
-                    headers: Optional[Dict] = None, auto_start: bool = True, save_dir: Optional[str] = None) -> 'DownloadTask':
+                    headers: Optional[Dict] = None, auto_start: bool = True, save_dir: Optional[str] = None,
+                    force: bool = False) -> Optional['DownloadTask']:
+        if not force:
+            # 1. Prevent duplicate download if currently active
+            active = self.get_active_task_by_url(url)
+            if active:
+                self._emit_event("focus_dialog", active)
+                return active
+
+            # 2. Prevent duplicate download if already completed and on disk
+            completed = storage.find_completed_by_url(url)
+            if completed:
+                self._emit_event("already_downloaded", completed)
+                return None
+
         if save_dir and not save_path:
             save_path = save_dir
         task_id = str(uuid.uuid4())

@@ -24,7 +24,8 @@
     "storage",
     "downloads",
     "tabs",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"

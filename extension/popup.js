@@ -53,9 +53,41 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  const btnDownloadAll = document.getElementById("btn-download-all");
+  const mediaCount = document.getElementById("media-count");
+  let currentStreams = [];
+
+  if (btnDownloadAll) {
+    btnDownloadAll.addEventListener("click", () => {
+      if (!currentStreams || currentStreams.length === 0) return;
+      currentStreams.forEach(stream => {
+        chrome.runtime.sendMessage({
+          action: "download_stream",
+          url: stream.url,
+          title: stream.title,
+          referer: (activeTab && activeTab.url) ? activeTab.url : ""
+        });
+      });
+      btnDownloadAll.textContent = `✓ Sent ${currentStreams.length} to NDM`;
+      setTimeout(() => {
+        btnDownloadAll.innerHTML = `⚡ Download All (<span id="media-count">${currentStreams.length}</span>)`;
+      }, 2500);
+    });
+  }
+
   function renderMediaItems(streams) {
     if (!streams || streams.length === 0) return;
+    currentStreams = streams;
     mediaList.innerHTML = "";
+
+    if (btnDownloadAll && mediaCount) {
+      if (streams.length > 1) {
+        btnDownloadAll.style.display = "block";
+        mediaCount.textContent = streams.length;
+      } else {
+        btnDownloadAll.style.display = "none";
+      }
+    }
 
     streams.forEach(stream => {
       const row = document.createElement("div");
