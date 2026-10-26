@@ -26,7 +26,6 @@ class ProgressDialog(ctk.CTkToplevel):
         self.title(f"Downloading - {self.task.filename}")
         self.geometry("560x340")
         self.minsize(520, 320)
-        self.attributes("-topmost", True)
 
         self._is_active = True
         try:

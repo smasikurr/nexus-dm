@@ -54,7 +54,7 @@ class Config:
         self.port = DEFAULT_PORT
         self.max_connections = 16
         self.auto_start_downloads = True
-        self.show_progress_dialog = True
+        self.show_progress_dialog = False # Silent Background Mode by default
         self.theme = "dark" # dark or light
         self.speed_limit_kb = 0 # 0 = unlimited
         self.category_dirs = {}

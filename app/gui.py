@@ -304,9 +304,11 @@ class OptionsDialog(ctk.CTkToplevel):
         # 4. Integration & System Toggles
         ctk.CTkLabel(scroll, text="Integration & System:", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", pady=(12, 4))
 
-        self.chk_dialog = ctk.CTkCheckBox(scroll, text="Show IDM-style progress popup on download start")
+        self.chk_dialog = ctk.CTkCheckBox(scroll, text="Show progress popup on download start (Unchecked = Silent background mode)")
         if config.show_progress_dialog:
             self.chk_dialog.select()
+        else:
+            self.chk_dialog.deselect()
         self.chk_dialog.pack(anchor="w", pady=3)
 
         self.chk_autostart = ctk.CTkCheckBox(scroll, text="Launch Nexus DM automatically on Windows startup (Background tray)")
@@ -801,6 +803,14 @@ class MainWindow(ctk.CTk):
                 self.tree.set(task_id, "time_left", task.eta_formatted if task.state == DownloadState.DOWNLOADING else "")
 
         self.lbl_speed_total.configure(text=f"Total Speed: {format_speed(total_speed)}")
+        if hasattr(self, "tray_icon") and self.tray_icon:
+            try:
+                if active_count > 0:
+                    self.tray_icon.title = f"Nexus DM - {active_count} downloading ({format_speed(total_speed)})"
+                else:
+                    self.tray_icon.title = f"Nexus DM - Ready"
+            except Exception:
+                pass
         self.after(800, self._periodic_ui_update)
 
     def _on_engine_event(self, event_type: str, data):
@@ -812,11 +822,11 @@ class MainWindow(ctk.CTk):
                 self._refresh_download_list()
             elif event_type == "focus_dialog":
                 task = data
-                if task:
+                if task and (config.show_progress_dialog or task.id in self.active_dialogs):
                     self._open_progress_dialog(task)
             elif event_type == "already_downloaded":
                 item = data
-                if item:
+                if item and self.state() == "normal" and self.winfo_viewable():
                     self._show_already_downloaded_dialog(item)
             elif event_type in ["completed", "failed", "paused", "downloading"]:
                 self._refresh_download_list()
@@ -830,7 +840,6 @@ class MainWindow(ctk.CTk):
         dlg.title("File Already Downloaded - Nexus DM")
         dlg.geometry("490x210")
         dlg.resizable(False, False)
-        dlg.attributes("-topmost", True)
 
         ctk.CTkLabel(dlg, text="⚡ File Already Downloaded", font=ctk.CTkFont(size=14, weight="bold")).pack(padx=16, pady=(16, 6), anchor="w")
         ctk.CTkLabel(dlg, text=f"This file has already been downloaded and is available on disk:\n\n{fn}\n\nFolder: {fp}",
@@ -875,7 +884,6 @@ class MainWindow(ctk.CTk):
         except Exception:
             pass
         dlg.lift()
-        dlg.focus_force()
 
     def _open_progress_dialog(self, task):
         if not task:
@@ -885,8 +893,6 @@ class MainWindow(ctk.CTk):
                 dlg = self.active_dialogs[task.id]
                 dlg.deiconify()
                 dlg.lift()
-                dlg.attributes("-topmost", True)
-                dlg.focus_force()
                 return
             except Exception:
                 pass
@@ -894,8 +900,6 @@ class MainWindow(ctk.CTk):
         dlg = ProgressDialog(self, task, on_close=lambda *args: self.active_dialogs.pop(task.id, None))
         self.active_dialogs[task.id] = dlg
         dlg.lift()
-        dlg.attributes("-topmost", True)
-        dlg.focus_force()
 
     def _show_add_url(self):
         AddUrlDialog(self, on_submit=self._on_add_url_submit)
